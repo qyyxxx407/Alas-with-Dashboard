@@ -127,8 +127,8 @@ class OSShopHandler(OSStatus, OSShopUI, Selector, MapEventHandler):
         Returns:
             list:
         """
-
-        result = sum([template.match_multi(self.image_crop((360, 320, 410, 720))) for template in TEMPLATES], [])
+        image = self.image_crop((360, 320, 410, 720))
+        result = sum([template.match_multi(image) for template in TEMPLATES], [])
         logger.info(f'Costs: {result}')
         return Points([(0., m.area[1]) for m in result]).group(threshold=5)
 
@@ -409,13 +409,31 @@ class OSShopHandler(OSStatus, OSShopUI, Selector, MapEventHandler):
         _count = 0
         for i in range(4):
             count = 0
+            pre_pos = -1.0
             self.os_shop_side_navbar_ensure(upper=i + 1)
-            self.device.sleep((0.3, 0.5))
-            self.device.click(CLICK_SAFE_AREA)
-            self.device.screenshot()
+
+            if not OS_SHOP_SCROLL.appear(main=self):
+                logger.warning('ScriptError, Scroll does not appear, try to rescue slider')
+                self.rescue_slider()
             OS_SHOP_SCROLL.set_top(main=self)
+            cur_pos = OS_SHOP_SCROLL.cal_position(main=self)
 
             while True:
+                if pre_pos == cur_pos:
+                    logger.warning('ScriptError, Scroll drag page error')
+                    self.rescue_slider()
+                    OS_SHOP_SCROLL.set(cur_pos, main=self)
+                    for _ in range(3):
+                        logger.warning('ScriptError, Scroll drag page error, retrying scroll')
+                        OS_SHOP_SCROLL.next_page(main=self, page=0.5)
+                        cur_pos = OS_SHOP_SCROLL.cal_position(main=self)
+                        if pre_pos != cur_pos:
+                            break
+                    if pre_pos == cur_pos:
+                        raise ScriptError('Scroll drag page error.')
+                else:
+                    pre_pos = cur_pos
+
                 count += self.os_shop_buy(select_func=self.os_shop_get_item_to_buy_in_port)
                 if count >= 10:
                     logger.info('This shop reach max buy count, go to next shop')
@@ -425,10 +443,17 @@ class OSShopHandler(OSStatus, OSShopUI, Selector, MapEventHandler):
                     break
                 else:
                     OS_SHOP_SCROLL.next_page(main=self, page=0.5)
+                    cur_pos = OS_SHOP_SCROLL.cal_position(main=self)
                     continue
             _count += count
 
         return _count > 0 or len(self.os_shop_items.items) == 0
+
+    def rescue_slider(self):
+        self.device.drag((1152, 230), (1152, 600), segments=2, shake=(25, 0),
+                         point_random=(0, 0, 0, 0), shake_random=(-5, 0, 5, 0))
+        self.device.sleep(0.5)
+        self.device.screenshot()
 
     def handle_akashi_supply_buy(self, grid):
         """
