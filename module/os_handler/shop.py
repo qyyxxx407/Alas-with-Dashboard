@@ -1,5 +1,6 @@
 from module.base.button import ButtonGrid
 from module.base.decorator import cached_property
+from module.base.utils import random_rectangle_vector
 from module.exception import ScriptError
 from module.logger import logger
 from module.map_detection.utils import Points
@@ -419,20 +420,7 @@ class OSShopHandler(OSStatus, OSShopUI, Selector, MapEventHandler):
             cur_pos = OS_SHOP_SCROLL.cal_position(main=self)
 
             while True:
-                if pre_pos == cur_pos:
-                    logger.warning('ScriptError, Scroll drag page error')
-                    self.rescue_slider()
-                    OS_SHOP_SCROLL.set(cur_pos, main=self)
-                    for _ in range(3):
-                        logger.warning('ScriptError, Scroll drag page error, retrying scroll')
-                        OS_SHOP_SCROLL.next_page(main=self, page=0.5)
-                        cur_pos = OS_SHOP_SCROLL.cal_position(main=self)
-                        if pre_pos != cur_pos:
-                            break
-                    if pre_pos == cur_pos:
-                        raise ScriptError('Scroll drag page error.')
-                else:
-                    pre_pos = cur_pos
+                pre_pos = self.pre_scroll(pre_pos, cur_pos)
 
                 count += self.os_shop_buy(select_func=self.os_shop_get_item_to_buy_in_port)
                 if count >= 10:
@@ -449,11 +437,42 @@ class OSShopHandler(OSStatus, OSShopUI, Selector, MapEventHandler):
 
         return _count > 0 or len(self.os_shop_items.items) == 0
 
-    def rescue_slider(self):
-        self.device.drag((1152, 230), (1152, 600), segments=2, shake=(25, 0),
-                         point_random=(0, 0, 0, 0), shake_random=(-5, 0, 5, 0))
+    def rescue_slider(self, distance=200):
+        detection_area = (1130, 230, 1170, 710)
+        direction_vector = (0, distance)
+        p1, p2 = random_rectangle_vector(
+                direction_vector, box=detection_area, random_range=(-10, -40, 10, 40), padding=10)
+        self.device.drag(p1, p2, segments=2, shake=(25, 0), point_random=(0, 0, 0, 0), shake_random=(-5, 0, 5, 0))
         self.device.sleep(0.5)
         self.device.screenshot()
+
+    def pre_scroll(self, pre_pos, cur_pos) -> float:
+        """Pretreatment Sliding
+
+        Args:
+            pre_pos: Previous position
+            cur_pos: Current position
+
+        Raise:
+            ScriptError: Slide Page Error
+
+        Returns:
+            cur_pos: Current position
+        """
+        if pre_pos == cur_pos:
+            logger.warning('ScriptError, Scroll drag page error')
+            self.rescue_slider()
+            OS_SHOP_SCROLL.set(cur_pos, main=self)
+            for _ in range(3):
+                logger.warning('ScriptError, Scroll drag page error, retrying scroll')
+                OS_SHOP_SCROLL.next_page(main=self, page=0.5)
+                cur_pos = OS_SHOP_SCROLL.cal_position(main=self)
+                if pre_pos != cur_pos:
+                    return cur_pos
+            if pre_pos == cur_pos:
+                raise ScriptError('Scroll drag page error.')
+        else:
+            return cur_pos
 
     def handle_akashi_supply_buy(self, grid):
         """
